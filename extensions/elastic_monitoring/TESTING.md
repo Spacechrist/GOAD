@@ -2,14 +2,18 @@
 
 ## Completed in the development workspace
 
-- `python3 -m unittest discover -s tests -v`: **27 tests passed**.
+- `python3 -m unittest discover -s tests -v`: **48 tests passed**.
 - YAML parsed with duplicate-key rejection.
 - Reviewed Windows mutation gates, private state storage, artifact integrity
   checks, preexisting-installation refusal, and report status semantics.
 - Changes are confined to a new `extensions/elastic_monitoring` directory.
+- Workstation wrapper tests cover native argv construction, subnet/method gates,
+  metadata-based failure detection, inventory handoff without credential output,
+  concurrent-create locking, and a fake child-process failure. They launch no VMs.
 
-The tests cover Python logic and static repository properties. They do not
-execute Ansible modules, install software, contact a lab, or test Windows APIs.
+The tests cover Python logic, fake process handling, and static repository
+properties. They do not execute Ansible modules, install software, contact a lab,
+or test Windows APIs.
 
 ## Not run in this environment
 
@@ -18,6 +22,8 @@ execute Ansible modules, install software, contact a lab, or test Windows APIs.
 - Live WinRM/PSRP preflight, Sysmon install/configuration update, logging changes,
   GPO refresh, rollback, and repeat-run idempotency.
 - Authenticode validation with the lab's trust/revocation connectivity.
+- VMware Workstation/Vagrant dependency checks, native GOAD provisioning,
+  native Windows `vm` provisioning method, and inventory transfer to a controller.
 - Fleet, Elastic Agent, Elastic Defend, and ingestion: these are not implemented
   in milestone 1 and must not be inferred from a passing offline test suite.
 

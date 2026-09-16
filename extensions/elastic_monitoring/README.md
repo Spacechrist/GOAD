@@ -1,4 +1,4 @@
-# Elastic monitoring for GOAD — milestone 1 (draft)
+# Elastic monitoring for GOAD — host telemetry and Workstation setup (draft)
 
 An additive, standalone Ansible companion for an existing GOAD inventory.
 Target Elastic version: **9.5.3**. This is **not yet** the full Fleet/EDR solution.
@@ -15,7 +15,7 @@ Nothing in this directory changes GOAD's core provisioning or its existing
 | Fresh Sysmon install and managed configuration updates | Implemented; canary testing pending |
 | Local audit, PowerShell, command-line, and channel logging | Implemented; English Windows preset; canary testing pending |
 | Post-GPO effective logging verification | Implemented; operator controls GPO refresh |
-| GOAD creation/provisioning wrapper | Planned; native GOAD remains unchanged |
+| VMware Workstation creation/provisioning wrapper | Implemented; native GOAD CLI reused; live provider testing pending |
 | Optional Docker-ELK bootstrap and Fleet Server | Planned; no stack mutation in this milestone |
 | Agent installation, Fleet policies, Elastic Defend/EDR | Planned; not installed by these playbooks |
 | GPO management, targeted SACLs, transcription | Planned |
@@ -27,9 +27,11 @@ Do not run the Windows mutation playbook on all hosts before a canary review.
 
 ## Prerequisites and boundaries
 
-- Existing isolated GOAD lab; use the same inventory files, credentials, and
+- An isolated GOAD lab; use the same inventory files, credentials, and
   WinRM/PSRP settings as its current provisioner. This extension does not deploy
-  a vulnerable domain or change firewall exposure.
+  a domain through its monitoring playbooks or change firewall exposure.
+  For optional native GOAD creation on the selected VMware Workstation provider,
+  see [VMWARE-WORKSTATION.md](VMWARE-WORKSTATION.md).
 - Linux Ansible controller with Python 3.11+, Ansible Core 2.18-compatible
   environment, and the collection pinned in `requirements.yml`. Keep a separate
   virtual environment if the existing GOAD installation pins different versions.
@@ -73,6 +75,7 @@ cd ansible
 ansible-playbook \
   -i /absolute/path/to/goad/lab-inventory \
   -i /absolute/path/to/goad/provider-inventory \
+  -i /absolute/path/to/goad/globalsettings.ini \
   -i ../inventory.example.ini \
   -e @../config.local.yml \
   preflight.yml
@@ -80,7 +83,10 @@ ansible-playbook \
 
 The overlay maps GOAD's `domain` group into `monitoring_windows` and defines a
 local controller. If your inventory uses a different group, make a local overlay
-and adjust it. `monitoring_targets` is mandatory and must be a nonempty subset of
+and adjust it. Include enabled extension inventories and `globalsettings.ini`
+when present; `scripts/workstation.py inspect` reports the full ordered path
+list for your Workstation instance without printing credentials.
+`monitoring_targets` is mandatory and must be a nonempty subset of
 that group. Do not use `--limit` or `--start-at-task`: they can skip controller
 gates or report generation. Narrow the target list instead. Run this workflow
 once at a time against a given lab/cache; concurrent mutation is not supported.
@@ -138,6 +144,7 @@ From `ansible/`, use the same inventory inputs as preflight:
 ansible-playbook \
   -i /absolute/path/to/goad/lab-inventory \
   -i /absolute/path/to/goad/provider-inventory \
+  -i /absolute/path/to/goad/globalsettings.ini \
   -i ../inventory.example.ini \
   -e @../config.local.yml \
   -e @../.local/artifacts/canary-01/artifacts.lock.json \
@@ -190,8 +197,9 @@ python3 -m unittest discover -s tests -v
 
 The offline suite requires PyYAML (already a GOAD dependency). It checks config
 validation, artifact-cache behavior, tamper detection, XML/ZIP constraints, YAML
-parsing/duplicate keys, and deployment defaults. It uses fake in-memory artifacts,
-never real Sysmon binaries or network access.
+parsing/duplicate keys, deployment defaults, and the VMware native-workflow
+wrapper. It uses fake in-memory artifacts and temporary metadata/fake processes,
+never real Sysmon binaries, hypervisors, or network access.
 
 On a controller with the pinned collection installed, run Ansible syntax checks
 for `preflight.yml`, `windows.yml`, and `validate-logging.yml`. On Windows

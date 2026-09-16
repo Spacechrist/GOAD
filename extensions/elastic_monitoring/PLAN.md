@@ -17,15 +17,18 @@ package versions will be selected for that version and recorded separately.
 | 5 — Optional fresh deployment | Native GOAD setup entry point and optional pinned Docker-ELK initialization | Provider-specific canary; no replacement of existing installations |
 | 6 — Full validation and recovery | Ingestion/dedup checks, retention policy, machine-readable rollout results, removal/recovery tasks | Member canary, DC canary, staged rollout, no unnecessary second-run changes |
 
-Milestone 1's source is implemented in this draft. No milestone has yet passed
-live lab acceptance. Remaining milestones are not stub playbooks that pretend to
+Milestone 1's source and the VMware Workstation portion of milestone 5 are
+implemented in this draft. `scripts/workstation.py` provides a read-only plan,
+explicit optional native GOAD creation, and existing-instance inventory handoff.
+No milestone has yet passed live lab acceptance. Remaining milestones are not stub playbooks that pretend to
 work. Native extension registration and end-to-end `site.yml` come only once
 their dependencies are real.
 
 ## Decisions needed before stack/provider work
 
-- Actual provider (Proxmox, VMware, VirtualBox, Ludus, or another supported GOAD
-  provider), lab variant, existing instance identity, and complete inventory inputs.
+- Provider confirmed: **VMware Workstation** (`vmware`, not `vmware_esxi`).
+  Still needed for live setup: host/controller OS and method, lab variant,
+  instance identity (when reusing a lab), subnet and complete inventory inputs.
 - Docker-ELK checkout path, commit/branch, Compose files/project name, and whether
   the running stack already uses TLS; inspect rather than assume.
 - VM-reachable Fleet/Elasticsearch DNS names, certificate SANs, CA ownership, and
