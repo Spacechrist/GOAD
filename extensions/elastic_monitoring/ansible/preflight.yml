@@ -1,0 +1,100 @@
+---
+- name: Validate controller inputs and select explicit Windows inventory aliases
+  hosts: monitoring_controller
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Validate target membership without overriding GOAD inventory variables
+      ansible.builtin.assert:
+        that:
+          - groups['monitoring_controller'] | length == 1
+          - inventory_hostname == 'localhost'
+          - monitoring_targets is defined
+          - monitoring_targets is sequence
+          - monitoring_targets is not string
+          - monitoring_targets | length > 0
+          - monitoring_targets | difference(groups.get('monitoring_windows', [])) | length == 0
+        fail_msg: Supply explicit monitoring_targets that belong to monitoring_windows.
+
+    - name: Validate configuration with the offline validator
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/config.py"
+        stdin: >-
+          {{ {'elastic_version': monitoring_elastic_version,
+              'fleet_url': monitoring_fleet_url,
+              'elasticsearch_url': monitoring_elasticsearch_url,
+              'kibana_url': monitoring_kibana_url,
+              'targets': monitoring_targets,
+              'min_free_gb': monitoring_min_free_gb,
+              'event_log_bytes': monitoring_event_log_bytes,
+              'security_log_bytes': monitoring_security_log_bytes} | to_json }}
+      changed_when: false
+      check_mode: false
+
+    - name: Validate Windows transport for each selected alias
+      ansible.builtin.assert:
+        that:
+          - hostvars[item].ansible_connection | default('') in ['winrm', 'psrp']
+        fail_msg: "{{ item }} must use its existing GOAD WinRM or PSRP connection."
+      loop: "{{ monitoring_targets }}"
+
+    - name: Build ephemeral target group without changing inventory files
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: monitoring_selected
+      loop: "{{ monitoring_targets }}"
+      changed_when: false
+
+- name: Read Windows readiness facts without configuring the hosts
+  hosts: monitoring_selected
+  gather_facts: false
+  tasks:
+    - name: Read OS, services, logs, and TCP reachability
+      ansible.windows.win_powershell:
+        script: "{{ lookup('ansible.builtin.file', playbook_dir + '/files/Inspect-Host.ps1') }}"
+        parameters:
+          FleetUrl: "{{ monitoring_fleet_url }}"
+          ElasticsearchUrl: "{{ monitoring_elasticsearch_url }}"
+        depth: 5
+        error_action: stop
+      register: monitoring_probe
+      changed_when: false
+      ignore_errors: true
+      ignore_unreachable: true
+
+- name: Write sanitized readiness evidence on the controller
+  hosts: monitoring_controller
+  gather_facts: false
+  tasks:
+    - name: Create private report directory
+      ansible.builtin.file:
+        path: "{{ monitoring_report_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Save observations including failed and unreachable hosts
+      ansible.builtin.copy:
+        dest: "{{ monitoring_report_dir }}/{{ item | hash('sha256') }}.json"
+        mode: "0600"
+        content: >-
+          {{ {'inventory_hostname': item,
+              'status': ('observed' if hostvars[item].monitoring_probe.result is defined
+                          and not (hostvars[item].monitoring_probe.failed | default(false))
+                          else 'failed_or_unreachable'),
+              'facts': hostvars[item].monitoring_probe.result | default({}),
+              'elastic_agent_support': 'not_evaluated',
+              'elastic_defend_support': 'not_evaluated',
+              'tls_validation': 'not_evaluated',
+              'ingestion': 'not_evaluated'} | to_nice_json }}
+      loop: "{{ monitoring_targets }}"
+
+    - name: Fail after evidence is saved when any target could not be inspected
+      ansible.builtin.assert:
+        that:
+          - hostvars[item].monitoring_probe.result is defined
+          - not (hostvars[item].monitoring_probe.failed | default(false))
+          - not (hostvars[item].monitoring_probe.unreachable | default(false))
+        fail_msg: "{{ item }} could not be inspected; see the per-host report."
+      loop: "{{ monitoring_targets }}"

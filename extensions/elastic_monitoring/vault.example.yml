@@ -1,0 +1,9 @@
+---
+# Template only. No credentials are required by the current preflight/host roles
+# beyond the existing GOAD inventory. Future Fleet automation will use these.
+# Create vault.yml with ansible-vault create; it is ignored by Git.
+vault_monitoring_kibana_api_key: "REPLACE_BEFORE_USE"
+vault_monitoring_fleet_service_token: "REPLACE_BEFORE_USE"
+vault_monitoring_enrollment_tokens:
+  member: "REPLACE_BEFORE_USE"
+  dc: "REPLACE_BEFORE_USE"

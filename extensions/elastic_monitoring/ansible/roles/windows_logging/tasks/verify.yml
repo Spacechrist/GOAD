@@ -1,0 +1,42 @@
+---
+- name: Read back required registry values
+  ansible.windows.win_reg_stat:
+    path: "{{ item.path }}"
+    name: "{{ item.name }}"
+  loop: "{{ monitoring_registry_settings }}"
+  register: monitoring_registry_readback
+
+- name: Fail when effective registry values disagree
+  ansible.builtin.assert:
+    that:
+      - item.exists
+      - item.value | string == item.item.data | string
+  loop: "{{ monitoring_registry_readback.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Check effective audit policy without writing it
+  ansible.windows.win_audit_policy_system:
+    subcategory: "{{ item.subcategory }}"
+    audit_type: "{{ item.audit_type }}"
+  loop: "{{ monitoring_effective_audit }}"
+  check_mode: true
+  register: monitoring_audit_readback
+
+- name: Fail when effective audit settings disagree
+  ansible.builtin.assert:
+    that:
+      - not item.changed
+    fail_msg: Effective audit policy differs. Review domain Group Policy before reapplying local settings.
+  loop: "{{ monitoring_audit_readback.results }}"
+  loop_control:
+    label: "{{ item.item.subcategory }}"
+
+- name: Read back channel state without writing it
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', role_path + '/files/Set-Channels.ps1') }}"
+    parameters:
+      ChannelsJson: "{{ monitoring_effective_channels | to_json }}"
+      VerifyOnly: true
+    error_action: stop
+  changed_when: false

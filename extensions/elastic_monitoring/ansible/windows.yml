@@ -1,0 +1,44 @@
+---
+- name: Collect readiness evidence before any Windows mutation
+  ansible.builtin.import_playbook: preflight.yml
+
+- name: Apply explicitly approved Windows telemetry changes one host at a time
+  hosts: monitoring_selected
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require explicit approvals and minimum host prerequisites
+      ansible.builtin.assert:
+        that:
+          - monitoring_apply | default(false) | bool
+          - not ansible_check_mode
+          - monitoring_probe.result.is_admin | bool
+          - monitoring_probe.result.x64 | bool
+          - monitoring_probe.result.powershell_version is version('5.1', '>=')
+          - monitoring_probe.result.free_gb | float >= monitoring_min_free_gb | float
+          - not monitoring_probe.result.is_dc or monitoring_allow_dc_changes | default(false) | bool
+          - monitoring_probe.result.collectors | length == 0 or monitoring_allow_existing_collectors | default(false) | bool
+        fail_msg: Approval/prerequisite gate failed. Read the report; do not bypass a failed compatibility check.
+
+    - name: Require Sysmon support review before any mutation
+      ansible.builtin.assert:
+        that:
+          - monitoring_probe.result.build in monitoring_sysmon_approved_builds
+      when: monitoring_sysmon_enabled | bool
+
+    - name: Require local-policy and language review before any mutation
+      ansible.builtin.assert:
+        that:
+          - monitoring_allow_local_logging | bool
+          - monitoring_probe.result.os_language | int == 1033
+        fail_msg: Local logging is opt-in and this initial audit-policy preset supports English Windows only.
+      when: monitoring_logging_enabled | bool
+
+  roles:
+    - role: monitoring_state
+      when: monitoring_sysmon_enabled | bool or monitoring_logging_enabled | bool
+    - role: sysmon
+      when: monitoring_sysmon_enabled | bool
+    - role: windows_logging
+      when: monitoring_logging_enabled | bool

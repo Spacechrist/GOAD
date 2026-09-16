@@ -1,0 +1,56 @@
+---
+- name: Require recorded artifact hashes and an immutable configuration revision
+  ansible.builtin.assert:
+    that:
+      - monitoring_artifacts is defined
+      - monitoring_artifacts.sysmon_zip_sha256 is match('^[0-9a-f]{64}$')
+      - monitoring_artifacts.sysmon_config_sha256 is match('^[0-9a-f]{64}$')
+      - monitoring_artifacts.hartong_revision is match('^[0-9a-f]{40}$')
+    fail_msg: Run scripts/artifacts.py and supply its artifacts.lock.json with -e @file.
+
+- name: Check the controller artifacts before transfer
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  delegate_to: localhost
+  vars:
+    ansible_connection: local
+    ansible_shell_type: sh
+  loop:
+    - path: "{{ monitoring_artifacts.sysmon_zip }}"
+      sha256: "{{ monitoring_artifacts.sysmon_zip_sha256 }}"
+    - path: "{{ monitoring_artifacts.sysmon_config }}"
+      sha256: "{{ monitoring_artifacts.sysmon_config_sha256 }}"
+  register: monitoring_artifact_stats
+
+- name: Reject changed or missing controller artifacts
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.checksum | default('') == item.item.sha256
+  loop: "{{ monitoring_artifact_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Transfer the locked archive and configuration to private staging
+  ansible.windows.win_copy:
+    src: "{{ item.src }}"
+    dest: "{{ monitoring_state.result.path }}\\{{ item.name }}"
+  loop:
+    - src: "{{ monitoring_artifacts.sysmon_zip }}"
+      name: "{{ monitoring_artifacts.sysmon_zip_sha256 }}.zip"
+    - src: "{{ monitoring_artifacts.sysmon_config }}"
+      name: "{{ monitoring_artifacts.sysmon_config_sha256 }}.xml"
+
+- name: Verify publisher and install or update the managed Sysmon configuration
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', role_path + '/files/Set-Sysmon.ps1') }}"
+    parameters:
+      StateRoot: "{{ monitoring_state.result.path }}"
+      ZipHash: "{{ monitoring_artifacts.sysmon_zip_sha256 }}"
+      ConfigHash: "{{ monitoring_artifacts.sysmon_config_sha256 }}"
+      HartongRevision: "{{ monitoring_artifacts.hartong_revision }}"
+    error_action: stop
+    depth: 4
+  register: monitoring_sysmon_result

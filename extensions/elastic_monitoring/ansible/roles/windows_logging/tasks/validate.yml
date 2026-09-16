@@ -1,0 +1,13 @@
+---
+- name: Select host-role settings using the role defaults and operator overrides
+  ansible.builtin.set_fact:
+    monitoring_effective_audit: >-
+      {{ monitoring_audit_settings +
+         (monitoring_dc_audit_settings if monitoring_probe.result.is_dc else []) }}
+    monitoring_effective_channels: >-
+      {{ monitoring_log_channels +
+         ([{'name': 'Microsoft-Windows-Sysmon/Operational', 'max_bytes': monitoring_event_log_bytes}]
+          if monitoring_sysmon_enabled else []) }}
+
+- name: Read back effective settings
+  ansible.builtin.include_tasks: verify.yml
