@@ -5,7 +5,7 @@ on branch `feature/elastic-monitoring`.
 
 ## Confirmed failure
 
-During `servers.yml`, SRV02 stalled at `mssql : Install the database`.
+During `servers.yml`, SRV02 and SRV03 stalled at `mssql : Install the database`.
 The cached executable at `C:\setup\mssql\sql_installer.exe` was the SQL Server
 2019 Express download launcher, not the full database installation media:
 
