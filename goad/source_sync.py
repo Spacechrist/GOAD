@@ -7,6 +7,7 @@ import re
 import shlex
 import subprocess
 import tarfile
+import time
 
 ROOT_FILES = {'requirements.yml', 'noansible_requirements.yml', 'globalsettings.ini'}
 SOURCE_ROOTS = {'ansible', 'ad', 'extensions', 'scripts'}
@@ -153,11 +154,26 @@ def ssh_arguments(key, username, ip):
             '-o', 'ConnectTimeout=15', '-i', str(key), f'{username}@{ip}']
 
 
-def sync_checkout(project, instance_path, key, username, ip):
+def sync_checkout(project, instance_path, key, username, ip, attempts=12, delay=5):
     payload, expected = build_bundle(project, instance_path)
-    result = subprocess.run(ssh_arguments(key, username, ip) +
-                            ['python3 -c ' + shlex.quote(REMOTE_APPLY)],
-                            input=payload, stdout=subprocess.PIPE, timeout=300, check=True)
+    command = ssh_arguments(key, username, ip) + ['python3 -c ' + shlex.quote(REMOTE_APPLY)]
+    result = None
+    for attempt in range(1, attempts + 1):
+        try:
+            result = subprocess.run(command, input=payload, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, timeout=300, check=False)
+        except subprocess.TimeoutExpired:
+            if attempt == attempts:
+                raise RuntimeError('Provisioning VM SSH timed out before source synchronization')
+        else:
+            if result.returncode == 0:
+                break
+            if result.returncode != 255:
+                detail = result.stderr.decode(errors='replace').strip()[-500:]
+                raise RuntimeError('Provisioning VM rejected source synchronization: ' + detail)
+            if attempt == attempts:
+                raise RuntimeError(f'Provisioning VM SSH unavailable after {attempts} attempts')
+        time.sleep(delay)
     if result.stdout.decode().strip() != expected:
         raise RuntimeError('Provisioning VM did not confirm the expected source checksum')
     return expected

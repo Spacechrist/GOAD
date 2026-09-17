@@ -132,13 +132,34 @@ class SourceSyncTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'checksum'):
                     sync.sync_checkout(self.project, self.instance, key, 'vagrant', '192.168.56.3')
 
-    def test_sync_propagates_transport_failure(self):
+    def test_sync_retries_transport_failure_then_succeeds(self):
         key = self.base / 'key'
         key.write_text('test key')
         with patch.object(sync, 'build_bundle', return_value=(b'archive', 'expected')):
-            with patch.object(sync.subprocess, 'run', side_effect=subprocess.CalledProcessError(255, 'ssh')):
-                with self.assertRaises(subprocess.CalledProcessError):
-                    sync.sync_checkout(self.project, self.instance, key, 'vagrant', '192.168.56.3')
+            unavailable = subprocess.CompletedProcess([], 255, b'', b'connection timed out')
+            available = subprocess.CompletedProcess([], 0, b'expected', b'')
+            with patch.object(sync.subprocess, 'run', side_effect=[unavailable, available]) as run:
+                self.assertEqual(sync.sync_checkout(self.project, self.instance, key, 'vagrant',
+                                                    '192.168.56.3', attempts=2, delay=0), 'expected')
+                self.assertEqual(run.call_count, 2)
+
+    def test_sync_does_not_retry_remote_validation_failure(self):
+        key = self.base / 'key'
+        key.write_text('test key')
+        rejected = subprocess.CompletedProcess([], 1, b'', b'checksum mismatch')
+        with patch.object(sync, 'build_bundle', return_value=(b'archive', 'expected')):
+            with patch.object(sync.subprocess, 'run', return_value=rejected) as run:
+                with self.assertRaisesRegex(RuntimeError, 'checksum mismatch'):
+                    sync.sync_checkout(self.project, self.instance, key, 'vagrant',
+                                       '192.168.56.3', attempts=3, delay=0)
+                self.assertEqual(run.call_count, 1)
+
+    def test_sql_2019_uses_stable_microsoft_redirect(self):
+        defaults = yaml.safe_load((ROOT / 'ansible/roles/mssql/defaults/main.yml').read_text())
+        self.assertEqual(defaults['download_url_2019'],
+                         'https://go.microsoft.com/fwlink/?linkid=866658')
+        self.assertNotIn('7f8a9c43-8c8a-4f7c-9f92-83c18d96b681',
+                         defaults['download_url_2019'])
 
     def test_ssh_uses_argument_vector_and_instance_host_identity(self):
         key = self.base / 'key with spaces'

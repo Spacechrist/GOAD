@@ -1,5 +1,38 @@
 # Deployment incident and recovery record
 
+## Provisioning VM readiness and retired SQL 2019 download object
+
+On the new instance, the first source synchronization attempt reached the
+provisioning VM before TCP/22 was ready and OpenSSH exited 255 with
+`connect to host 192.168.56.3 port 22: Connection timed out`. Rerunning the
+installation later progressed into `servers.yml`, confirming that this was a
+readiness race rather than a source-manifest rejection.
+
+Source synchronization now retries only transport unavailability (SSH exit 255
+or a transport timeout), for a bounded interval. It does not retry checksum,
+archive, symlink, manifest, or other remote validation failures. Error reporting
+is bounded so the embedded remote program is no longer repeated in the console.
+
+The subsequent `servers.yml` run stopped on SRV02 before SQL Setup executed:
+Microsoft returned HTTP 404 for the former direct object
+`7f8a9c43-8c8a-4f7c-9f92-83c18d96b681/SQL2019-SSEI-Expr.exe`. The role's
+verified download failed closed and its rescue stopped the playbook. This is not
+the earlier partial-database incident: the reported failure was
+`Invoke-WebRequest`, before the installer command.
+
+Microsoft's SQL Server 2019 Express download page still identifies
+`SQL2019-SSEI-Expr.exe`, version 15.0.2000.5, for Windows Server 2016/2019, but
+its old direct link returned 404 during this run. The role now uses Microsoft's
+stable redirect `https://go.microsoft.com/fwlink/?linkid=866658`, observed on
+2026-09-17 resolving to a new `download.microsoft.com` object. Signature,
+original filename, minimum launcher version, artifact receipt, and optional
+SHA256-pin checks remain mandatory. A redirect resolving successfully is not
+enough by itself; the downloaded file must pass those checks.
+
+Recovery: pull the correction, then rerun only `servers.yml` for the existing
+instance. Source synchronization will copy the corrected defaults before Ansible
+starts. Do not delete SQL data, recreate VMs, or start Docker-ELK for this error.
+
 ## Confirmed recovery milestone: c99bdc-goad-vmware
 
 On 2026-09-17, after applying the fixes below and rerunning the Windows machines
