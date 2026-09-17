@@ -3,11 +3,14 @@
 An additive, standalone Ansible companion for an existing GOAD inventory.
 Target Elastic version: **9.5.3**. This is **not yet** the full Fleet/EDR solution.
 The monitoring playbooks remain standalone. This branch also includes targeted
-Windows launcher and SSMS detection fixes in GOAD's core deployment code.
+Windows launcher, VMware networking, SQL/SSMS installer and provisioning-source
+synchronization fixes in GOAD's core deployment code.
 The existing `extensions/elk` Filebeat-based extension is unchanged.
 
 See [DEPLOYMENT-TROUBLESHOOTING.md](DEPLOYMENT-TROUBLESHOOTING.md) for observed
 errors, recovery steps, evidence, and outstanding deployment fixes.
+See [REBUILD-FIXES.md](REBUILD-FIXES.md) for implemented changes and the fresh
+deployment acceptance checklist. Fresh Windows/VMware verification is pending.
 
 ## Current implementation
 

@@ -1,0 +1,5 @@
+installer_sha256: ''
+installer_refresh: false
+installer_minimum_version: '0.0'
+installer_version_pattern: '^.*$'
+installer_original_name: ''

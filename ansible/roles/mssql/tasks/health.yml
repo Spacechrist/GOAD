@@ -1,0 +1,36 @@
+- name: Start the selected SQL instance for health validation
+  win_service:
+    name: '{{ mssql_service_name }}'
+    state: started
+
+- name: Require sustained online system databases, not a transient running service
+  ansible.windows.win_powershell:
+    script: |
+      param([string] $Instance)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $server = if ($Instance -eq 'MSSQLSERVER') { 'lpc:.' } else { 'lpc:.\' + $Instance }
+      $deadline = (Get-Date).AddSeconds(120)
+      $successes = 0
+      do {
+          $connection = New-Object System.Data.SqlClient.SqlConnection
+          $connection.ConnectionString = "Server=$server;Database=master;Integrated Security=true;Connect Timeout=5;Pooling=false"
+          try {
+              $connection.Open()
+              $command = $connection.CreateCommand()
+              $command.CommandTimeout = 5
+              $command.CommandText = "SELECT COUNT(*) FROM sys.databases WHERE name IN ('master','model','msdb','tempdb') AND state_desc='ONLINE'"
+              if ([int]$command.ExecuteScalar() -eq 4) { $successes++ } else { $successes = 0 }
+              if ($successes -ge 3) { $Ansible.Result = @{ healthy = $true }; return }
+          } catch { $successes = 0 } finally { $connection.Dispose() }
+          Start-Sleep -Seconds 10
+      } while ((Get-Date) -lt $deadline)
+      throw 'SQL system database health failed. Inspect instance ERRORLOG and SQL Setup logs; do not reinstall over existing databases.'
+    parameters:
+      Instance: '{{ sql_instance_name }}'
+  become: true
+  become_method: runas
+  become_user: '{{ domain_admin }}'
+  vars:
+    ansible_become_password: '{{ domain_admin_password }}'
+    ansible_become_flags: logon_type=interactive logon_flags=with_profile

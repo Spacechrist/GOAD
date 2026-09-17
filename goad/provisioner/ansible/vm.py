@@ -17,8 +17,10 @@ class VmAnsibleProvisioner(Ansible):
             self.jumpbox.ip = jumpbox_ip
             self.jumpbox.ssh_key = self.jumpbox.get_jumpbox_key()
             if self.jumpbox.ssh_key is not None:
-                self.jumpbox.provision()
-                self.jumpbox.sync_sources()
+                if not self.jumpbox.sync_sources():
+                    raise RuntimeError('Provisioning source synchronization failed')
+                if not self.jumpbox.provision():
+                    raise RuntimeError('Provisioning VM dependency installation failed')
             else:
                 Log.error("The ssh key for the provider can't be found, error.")
         else:
@@ -26,7 +28,7 @@ class VmAnsibleProvisioner(Ansible):
 
     def sync_source_jumpbox(self):
         if self.jumpbox is not None:
-            self.jumpbox.sync_sources()
+            return self.jumpbox.sync_sources()
         else:
             Log.error('no jumpbox for provisioner')
 
@@ -37,6 +39,9 @@ class VmAnsibleProvisioner(Ansible):
         return super().run(playbook)
 
     def run_playbook(self, playbook, inventories, tries=3, timeout=30, playbook_path=None):
+        if self.jumpbox is None or not self.jumpbox.sync_sources():
+            Log.error('Refusing to run playbook with unverified provisioning sources')
+            return False
         if playbook_path is None:
             playbook_path = self.remote_project_path + '/ansible/'
         else:
@@ -48,15 +53,7 @@ class VmAnsibleProvisioner(Ansible):
         command = f'/home/vagrant/.local/bin/ansible-playbook -i {" -i ".join(remote_inventories)} {playbook}'
 
         Log.info(f'Run playbook : {playbook} with inventory file(s) : {", ".join(remote_inventories)}')
-        Log.cmd('command')
+        Log.cmd(command)
 
-        run_complete = False
-        nb_try = 0
-        while not run_complete:
-            nb_try += 1
-            run_complete = self.jumpbox.run_command(command, playbook_path)
-
-            if not run_complete and nb_try > tries:
-                Log.error('3 fails abort.')
-                break
-        return run_complete
+        # Failed installers can leave partial state. Do not blindly replay them.
+        return self.jumpbox.run_command(command, playbook_path)

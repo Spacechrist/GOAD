@@ -2,11 +2,19 @@
 
 ## Completed in the development workspace
 
-- `python3 -m unittest discover -s tests -v`: **48 tests passed**.
+- From repository root, `python -m unittest discover -s extensions/elastic_monitoring/tests -v`:
+  **66 tests passed**, under Python 3.10.21 and Python 3.12.
 - YAML parsed with duplicate-key rejection.
 - Reviewed Windows mutation gates, private state storage, artifact integrity
   checks, preexisting-installation refusal, and report status semantics.
-- Changes are confined to a new `extensions/elastic_monitoring` directory.
+- Core deployment changes are described in [REBUILD-FIXES.md](REBUILD-FIXES.md).
+- Source-transfer tests execute the remote unpacking program against an isolated
+  temporary directory: verified bytes, executable modes, CRLF normalization,
+  stale managed-file removal, preservation of unmanaged files, corrupt manifests,
+  symlink refusal, transport failure and incorrect checksum receipts.
+- SQL/SSMS task YAML passes duplicate-key checks and Jinja parsing. The VMware
+  template renders with and without the provisioning VM. The dependency setup
+  shell script passes `bash -n`.
 - Workstation wrapper tests cover native argv construction, subnet/method gates,
   metadata-based failure detection, inventory handoff without credential output,
   concurrent-create locking, and a fake child-process failure. They launch no VMs.
@@ -17,7 +25,9 @@ or test Windows APIs.
 
 ## Not run in this environment
 
-- Ansible syntax/module-resolution checks: Ansible is not installed here.
+- Full Ansible syntax/module-resolution checks: Ansible Core 2.12.6 was installed
+  in an isolated Python 3.10 environment, but the required Windows collections
+  were not obtained. YAML/Jinja checks are not a substitute for this gate.
 - PowerShell syntax checks: Windows PowerShell / `pwsh` is not installed here.
 - Live WinRM/PSRP preflight, Sysmon install/configuration update, logging changes,
   GPO refresh, rollback, and repeat-run idempotency.

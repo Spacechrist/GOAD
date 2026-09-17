@@ -67,7 +67,10 @@ boxes.append(
 
         # fix ip for vmware
         if ENV['VAGRANT_DEFAULT_PROVIDER'] == "vmware_desktop"
-          target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: false, args: box[:ip]
+          # Apply the secondary address at boot, outside the live WinRM session.
+          target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: true, args: box[:ip]
+          target.vm.provision :reload
+          target.vm.provision :shell, :path => "../../../vagrant/verify_ip.ps1", privileged: true, args: box[:ip]
         end
       else
         target.vm.communicator = "ssh"
@@ -75,7 +78,7 @@ boxes.append(
 
       if box.has_key?(:forwarded_port)
         # forwarded port explicit
-        box[:forwarded_port] do |forwarded_port|
+        box[:forwarded_port].each do |forwarded_port|
           target.vm.network :forwarded_port, guest: forwarded_port[:guest], host: forwarded_port[:host], host_ip: "127.0.0.1", id: forwarded_port[:id]
         end
       end

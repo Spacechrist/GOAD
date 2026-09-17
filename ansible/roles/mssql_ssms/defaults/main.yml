@@ -1,0 +1,7 @@
+# Fixed full package usable on both GOAD Server 2016 and Server 2019 guests.
+# Microsoft lists this as release 20.2.1 (build 20.2.37.0).
+ssms_download_url: https://download.microsoft.com/download/7519f0ff-997c-4f36-b5aa-9a51d47dd34c/SSMS-Setup-ENU.exe
+ssms_version_pattern: '^20\.2\.(37|1)(\.0)?$'
+ssms_sha256: ''
+ssms_refresh_installer: false
+ssms_install_timeout: 3600

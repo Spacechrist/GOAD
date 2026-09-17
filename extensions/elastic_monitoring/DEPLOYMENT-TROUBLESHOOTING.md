@@ -3,6 +3,10 @@
 Last updated: 2026-09-17. This records the evidence available in the deployment
 conversation, not a claim of completed end-to-end validation.
 
+Deployment changes addressing these incidents are now described in
+[REBUILD-FIXES.md](REBUILD-FIXES.md). They require a fresh Windows/VMware run;
+the recovered lab's success does not validate the new automated path.
+
 ## Environment
 
 - Windows host, VMware Workstation Pro, Vagrant 2.4.9, VMware plugin 3.0.5,

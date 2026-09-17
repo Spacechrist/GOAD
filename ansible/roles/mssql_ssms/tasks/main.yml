@@ -1,40 +1,57 @@
-# Query registered modern SSMS before downloading or invoking any installer.
-- name: Discover completed SSMS installations
-  win_shell: |
-    $ErrorActionPreference = 'Stop'
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $ready = $false
-    $pendingReboot = $false
-    if (Test-Path -LiteralPath $vswhere) {
-        $output = & $vswhere -products Microsoft.VisualStudio.Product.SSMS -all -format json
-        if ($LASTEXITCODE -ne 0) { throw 'SSMS discovery failed; refusing to start another installation.' }
-        $instances = @((($output -join [Environment]::NewLine) | ConvertFrom-Json))
-        foreach ($instance in $instances) {
-            if ($null -eq $instance) { continue }
-            if ($instance.isComplete -ne $true -or $instance.isLaunchable -ne $true) {
-                throw 'Incomplete SSMS installation detected. Recover it before retrying provisioning.'
-            }
-            if (-not $instance.productPath -or -not (Test-Path -LiteralPath $instance.productPath -PathType Leaf)) {
-                throw 'Registered SSMS executable is missing. Recover installation before retrying.'
-            }
-            $ready = $true
-            if ($instance.isRebootRequired -eq $true) { $pendingReboot = $true }
-        }
-    }
-    @{ installed = $ready; reboot_required = $pendingReboot } | ConvertTo-Json -Compress
-  register: ssms_discovery
-  changed_when: false
-  check_mode: false
+- name: Require a real run for installer state transitions
+  assert:
+    that: not ansible_check_mode
+    fail_msg: 'Installer discovery and recovery require a normal run; check mode cannot validate installation health.'
 
-- name: Store SSMS discovery result
-  set_fact:
-    ssms_registered: "{{ ssms_discovery.stdout | trim | from_json }}"
+- name: Inspect SSMS before any download
+  include_tasks: discover.yml
 
-- name: Reboot for a completed SSMS installation when required
+- name: Finish pending reboot for existing modern SSMS
   win_reboot:
     reboot_timeout: 600
-  when: ssms_registered.reboot_required | bool
+  when: ssms_discovery.result.reboot_required | bool
 
-- name: Run legacy SSMS installation only when no completed modern installation exists
-  include_tasks: legacy.yml
-  when: not (ssms_registered.installed | bool)
+- name: Install missing SSMS using the fixed full package
+  when: not (ssms_discovery.result.installed | bool)
+  block:
+    - name: Check supported OS for SSMS 20
+      win_shell: |
+        if ([Environment]::OSVersion.Version.Build -lt 14393) {
+            throw 'SSMS package requires Windows Server 2016 / Windows 10 1607 or newer'
+        }
+      changed_when: false
+
+    - name: Acquire a verified SSMS 20 installer
+      include_role:
+        name: verified_installer
+      vars:
+        installer_url: '{{ ssms_download_url }}'
+        installer_destination: 'C:\setup\mssql\SSMS_installer.exe'
+        installer_version_pattern: '{{ ssms_version_pattern }}'
+        installer_minimum_version: '20.2'
+        installer_sha256: '{{ ssms_sha256 }}'
+        installer_refresh: '{{ ssms_refresh_installer }}'
+
+    - name: Install SSMS with matching package arguments and a time limit
+      win_command: 'C:\setup\mssql\SSMS_installer.exe /install /quiet /norestart /log C:\setup\mssql\ssms-install.log'
+      async: '{{ ssms_install_timeout }}'
+      poll: 15
+      register: ssms_install
+      failed_when: ssms_install.rc | default(-1) not in [0, 3010]
+
+    - name: Reboot only if SSMS requested it
+      win_reboot:
+        reboot_timeout: 1200
+      when: ssms_install.rc == 3010
+
+    - name: Verify installed SSMS product
+      include_tasks: discover.yml
+
+    - name: Require a complete installed product
+      assert:
+        that: ssms_discovery.result.installed | bool
+        fail_msg: 'SSMS returned success but product discovery failed; inspect C:\setup\mssql\ssms-install.log'
+  rescue:
+    - name: Report SSMS failure without an automatic retry
+      fail:
+        msg: 'SSMS failed. Inspect C:\setup\mssql\ssms-install.log and TEMP\dd_* logs. Recover any partial installation before retrying.'
