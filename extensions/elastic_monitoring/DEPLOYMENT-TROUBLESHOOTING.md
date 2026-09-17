@@ -1,5 +1,31 @@
 # Deployment incident and recovery record
 
+## Reboot address selection and provisioning VM port collision
+
+During the fresh `c99bdc-goad-vmware` rebuild, the user reported the same
+post-reboot failure on all five Windows guests. SRV03 scheduled `.23` but Vagrant
+attempted WinRM at `.149` and timed out. DC01 earlier showed `.145` after `.10`
+was scheduled. This is consistent with VMware Tools/vmrun reporting the secondary
+NIC's transient DHCP address. It does not establish that every startup task or
+post-reboot check succeeded. Vagrant's "already provisioned" marker is insufficient
+evidence of the final check after a failed reload.
+
+The VMware template now sets `enable_vmrun_ip_lookup = false`, selecting the
+provider's alternative address lookup. See
+[provider configuration](https://developer.hashicorp.com/vagrant/docs/providers/vmware/configuration).
+This retains the primary NAT adapter for Vagrant management while the lab NIC
+changes address. Runtime confirmation on these boxes is still required.
+
+The provisioning VM also failed because host TCP 2210 was occupied. The explicit
+forwarded-port declarations lacked `auto_correct: true`; they now allow Vagrant
+to select an available port, retaining loopback binding. The owner of 2210 is
+unknown; no service or unrelated VM should be killed merely to reclaim it.
+
+Recovery requires pulling this change and regenerating the current workspace
+with `update_instance_files`. Rerun Windows Vagrant provisioning once, sequentially,
+to require each final IP check to pass; stop on the first failure. Then create or
+start the provisioning VM. Preserve the existing VM state; deletion is unnecessary.
+
 ## Fresh rebuild regression: elevated wrapper UserId error
 
 The fresh deployment of `5bffdbc` failed on DC01 at `fix_ip.ps1` with

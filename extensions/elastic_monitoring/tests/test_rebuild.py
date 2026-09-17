@@ -179,6 +179,10 @@ class RebuildContractTests(unittest.TestCase):
         self.assertLess(text.index('fix_ip.ps1'), text.index('provision :reload'))
         self.assertLess(text.index('provision :reload'), text.index('verify_ip.ps1'))
         self.assertIn('box[:forwarded_port].each', text)
+        self.assertIn('v.enable_vmrun_ip_lookup = false', text)
+        forwarding = next(line for line in text.splitlines() if 'guest: forwarded_port[:guest]' in line)
+        self.assertIn('auto_correct: true', forwarding)
+        self.assertIn('host_ip: "127.0.0.1"', forwarding)
         for script in ('fix_ip.ps1', 'verify_ip.ps1'):
             line = next(line for line in text.splitlines() if script in line)
             self.assertIn('privileged: false', line)

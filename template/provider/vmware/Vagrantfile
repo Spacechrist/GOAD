@@ -22,6 +22,9 @@ boxes.append(
 
   config.vm.provider "vmware_desktop" do |v|
     v.force_vmware_license = "workstation"  # force the licence for fix some vagrant plugin issue
+    # vmrun can return the secondary NIC's old DHCP address during reboot.
+    # Use the provider's NAT lease lookup instead of that transient address.
+    v.enable_vmrun_ip_lookup = false
     # v.gui = true
   end
 
@@ -81,7 +84,7 @@ boxes.append(
       if box.has_key?(:forwarded_port)
         # forwarded port explicit
         box[:forwarded_port].each do |forwarded_port|
-          target.vm.network :forwarded_port, guest: forwarded_port[:guest], host: forwarded_port[:host], host_ip: "127.0.0.1", id: forwarded_port[:id]
+          target.vm.network :forwarded_port, guest: forwarded_port[:guest], host: forwarded_port[:host], host_ip: "127.0.0.1", id: forwarded_port[:id], auto_correct: true
         end
       end
 
