@@ -68,9 +68,11 @@ boxes.append(
         # fix ip for vmware
         if ENV['VAGRANT_DEFAULT_PROVIDER'] == "vmware_desktop"
           # Apply the secondary address at boot, outside the live WinRM session.
-          target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: true, args: box[:ip]
+          # Use the existing administrative WinRM session. The elevated wrapper
+          # fails registering its vagrant UserId task on these Windows boxes.
+          target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: false, args: box[:ip]
           target.vm.provision :reload
-          target.vm.provision :shell, :path => "../../../vagrant/verify_ip.ps1", privileged: true, args: box[:ip]
+          target.vm.provision :shell, :path => "../../../vagrant/verify_ip.ps1", privileged: false, args: box[:ip]
         end
       else
         target.vm.communicator = "ssh"

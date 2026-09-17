@@ -1,5 +1,30 @@
 # Deployment incident and recovery record
 
+## Fresh rebuild regression: elevated wrapper UserId error
+
+The fresh deployment of `5bffdbc` failed on DC01 at `fix_ip.ps1` with
+`(10,8):UserId:` and a wrapper line `$username = 'vagrant'`. The stack identifies
+`winrm-elevated` / `Shell: Elevated`. Earlier scripts using ordinary WinRM had
+completed. Vagrant then logged reload-provisioner cleanup, stopping and deleting
+DC01, followed by connection-reset and timeout errors. Those later exceptions
+must not obscure the initial task-registration error. Deletion completion and
+the state of other machines require checking; do not assume all VMs were removed.
+
+Cause assessment: the newly enabled `privileged: true` path invoked Vagrant's
+scheduled-task elevation wrapper, which failed on this box before the IP script
+reported success. The precise Windows account-resolution cause is unconfirmed.
+
+Correction: restore `privileged: false` for both IP scripts, using the same
+administrative WinRM session as the preceding provisioning scripts. The IP
+script explicitly checks the effective administrator token and fails clearly if
+it is unavailable. No UAC or authentication settings are weakened. The startup
+task, reboot and post-reboot verification remain. Existing generated workspace
+Vagrantfiles need updating as well as the source template.
+
+Status: correction prepared from the failure evidence; successful Windows runtime
+verification is pending. The previous PowerShell syntax pass did not exercise
+Vagrant's generated elevation wrapper and could not detect this regression.
+
 Last updated: 2026-09-17. This records the evidence available in the deployment
 conversation, not a claim of completed end-to-end validation.
 

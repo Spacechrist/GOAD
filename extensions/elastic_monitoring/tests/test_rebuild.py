@@ -179,6 +179,10 @@ class RebuildContractTests(unittest.TestCase):
         self.assertLess(text.index('fix_ip.ps1'), text.index('provision :reload'))
         self.assertLess(text.index('provision :reload'), text.index('verify_ip.ps1'))
         self.assertIn('box[:forwarded_port].each', text)
+        for script in ('fix_ip.ps1', 'verify_ip.ps1'):
+            line = next(line for line in text.splitlines() if script in line)
+            self.assertIn('privileged: false', line)
+            self.assertNotIn('privileged: true', line)
 
     def test_setup_never_clones_upstream(self):
         text = (ROOT / 'scripts/setup_local_jumpbox.sh').read_text()

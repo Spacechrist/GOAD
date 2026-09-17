@@ -1,5 +1,10 @@
 param ([Parameter(Mandatory = $true)][System.Net.IPAddress] $ip)
 $ErrorActionPreference = 'Stop'
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'IP configuration requires an administrative WinRM token. Check the box account and remoting configuration; do not retry through the Vagrant elevated wrapper.'
+}
 if ($ip.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
     throw 'An IPv4 address is required'
 }
