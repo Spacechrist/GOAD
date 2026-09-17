@@ -1,25 +1,40 @@
-- name: check SQL Server Manager Studio installer exists
-  win_stat:
-    path: c:\setup\mssql\SSMS_installer.exe
-  register: ssms_installer_file
+# Query registered modern SSMS before downloading or invoking any installer.
+- name: Discover completed SSMS installations
+  win_shell: |
+    $ErrorActionPreference = 'Stop'
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $ready = $false
+    $pendingReboot = $false
+    if (Test-Path -LiteralPath $vswhere) {
+        $output = & $vswhere -products Microsoft.VisualStudio.Product.SSMS -all -format json
+        if ($LASTEXITCODE -ne 0) { throw 'SSMS discovery failed; refusing to start another installation.' }
+        $instances = @((($output -join [Environment]::NewLine) | ConvertFrom-Json))
+        foreach ($instance in $instances) {
+            if ($null -eq $instance) { continue }
+            if ($instance.isComplete -ne $true -or $instance.isLaunchable -ne $true) {
+                throw 'Incomplete SSMS installation detected. Recover it before retrying provisioning.'
+            }
+            if (-not $instance.productPath -or -not (Test-Path -LiteralPath $instance.productPath -PathType Leaf)) {
+                throw 'Registered SSMS executable is missing. Recover installation before retrying.'
+            }
+            $ready = $true
+            if ($instance.isRebootRequired -eq $true) { $pendingReboot = $true }
+        }
+    }
+    @{ installed = $ready; reboot_required = $pendingReboot } | ConvertTo-Json -Compress
+  register: ssms_discovery
+  changed_when: false
+  check_mode: false
 
-- name: get the installer
-  win_get_url:
-      url: 'https://aka.ms/ssmsfullsetup'
-      dest: 'c:\setup\mssql\SSMS_installer.exe'
-  when: not ssms_installer_file.stat.exists
+- name: Store SSMS discovery result
+  set_fact:
+    ssms_registered: "{{ ssms_discovery.stdout | trim | from_json }}"
 
-- name: check SSMS installation already done
-  win_stat:
-    path: "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 18"
-  register: ssms_installation
-
-- name: Install SSMS
-  win_command: c:\setup\mssql\SSMS_installer.exe /install /quiet /norestart
-  register: install_ssmss
-  when: not ssms_installation.stat.exists
-
-- name: Reboot after install
+- name: Reboot for a completed SSMS installation when required
   win_reboot:
     reboot_timeout: 600
-  when: not ssms_installation.stat.exists
+  when: ssms_registered.reboot_required | bool
+
+- name: Run legacy SSMS installation only when no completed modern installation exists
+  include_tasks: legacy.yml
+  when: not (ssms_registered.installed | bool)
