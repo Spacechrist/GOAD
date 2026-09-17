@@ -222,5 +222,46 @@ continues the remaining sequence. Do not rerun the creation wrapper for recovery
 - Check a repeat run avoids unnecessary installation.
 - Keep secrets, SQL configuration contents and private SSH keys out of this log.
 
-Full-lab success and the second-system reproduction have not yet been reported.
+At the initial recording, full-lab success and second-system reproduction had not
+been reported. See the later successful resumed provisioning milestone below.
 Fleet, Elastic Agent/EDR and Docker-ELK automation are separate unfinished scope.
+
+## 9. Fixed SSMS role remained stale on the provisioning VM
+
+The Windows checkout was confirmed at commit 8c61d7c, but reading
+/home/vagrant/GOAD/ansible/roles/mssql_ssms/tasks/main.yml over SSH still showed
+the original installer-first tasks. A subsequent remote check still showed old
+content after synchronization was advised. The underlying synchronization failure
+was not diagnosed; no successful sync command output was supplied.
+
+Recovery instructed: stop provisioning and redundant SSMS launchers; use scp
+from the Windows checkout to copy both main.yml and legacy.yml into the existing
+remote role tasks directory. Verify the remote file starts with the modern
+discovery task, then resume from servers.yml. Copying only main.yml is insufficient
+because it includes legacy.yml. The user next reported completed provisioning.
+
+Permanent requirement: investigate native Windows source synchronization and
+verify remote source hashes/revision before executing Ansible. Direct scp is a
+workaround, not proof that sync_source_jumpbox is fixed.
+
+## Successful resumed provisioning milestone
+
+User-reported final output on 2026-09-17:
+`Provisioned from servers.yml in 01:29:23`, followed by the GOAD prompt for
+instance fbfe51-goad-vmware.
+
+| Host | ok | changed | unreachable | failed | skipped | rescued | ignored |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| dc01 | 11 | 4 | 0 | 0 | 1 | 0 | 0 |
+| dc02 | 16 | 14 | 0 | 0 | 6 | 0 | 0 |
+| dc03 | 10 | 7 | 0 | 0 | 0 | 0 | 0 |
+| srv02 | 13 | 10 | 0 | 0 | 1 | 0 | 0 |
+| srv03 | 13 | 11 | 0 | 0 | 1 | 0 | 0 |
+
+This confirms completion of the resumed playbook sequence as reported by GOAD.
+The supplied recap is the final play's recap, not cumulative task totals for all
+playbooks. This supersedes earlier statements that no completion output had been
+received. It does not establish the exact successful SQL reinstall steps, every
+intermediate SSMS task result, ongoing service health, repeat-run idempotency,
+or fresh reproducibility on the second system. Monitoring deployment has not
+been performed by this successful GOAD provisioning run.
