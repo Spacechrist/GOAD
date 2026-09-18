@@ -158,6 +158,11 @@ class SourceSyncTests(unittest.TestCase):
         defaults = yaml.safe_load((ROOT / 'ansible/roles/mssql/defaults/main.yml').read_text())
         self.assertEqual(defaults['download_url_2019'],
                          'https://go.microsoft.com/fwlink/?linkid=866658')
+        self.assertEqual(defaults['sql_launcher_minimum_2019'], '15.2607.0.1')
+        self.assertEqual(
+            defaults['sql_launcher_sha256_2019'],
+            '37cc32717aba3b6633071ec176c6728e05570cfa5cf4c67f54421a0a2b4493c2',
+        )
         self.assertNotIn('7f8a9c43-8c8a-4f7c-9f92-83c18d96b681',
                          defaults['download_url_2019'])
 
@@ -186,6 +191,16 @@ class RebuildContractTests(unittest.TestCase):
         self.assertIn('async', install)
         self.assertTrue(install['no_log'])
         self.assertTrue(any('always' in t for t in tasks))
+
+    def test_sql_launcher_preserves_connection_profile(self):
+        tasks = list(walk_tasks(yaml.safe_load((ROOT / 'ansible/roles/mssql/tasks/main.yml').read_text())))
+        install = next(t for t in tasks if t.get('name') == 'Install the database once with a time limit')
+        self.assertEqual(install['args']['chdir'], 'C:\\setup')
+        self.assertEqual(
+            install['vars']['ansible_become_flags'],
+            'logon_type=new_credentials logon_flags=netcredentials_only',
+        )
+        self.assertNotIn('logon_type=interactive', install['vars']['ansible_become_flags'])
 
     def test_ssms_has_no_legacy_directory_only_gate_or_evergreen_url(self):
         source = (ROOT / 'ansible/roles/mssql_ssms/tasks/main.yml').read_text()

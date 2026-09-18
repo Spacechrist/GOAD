@@ -5,7 +5,7 @@ on branch `feature/elastic-monitoring`.
 
 ## Confirmed failure
 
-During `servers.yml`, SRV02 and SRV03 stalled at `mssql : Install the database`.
+During `servers.yml`, SRV02 stalled at `mssql : Install the database`.
 The cached executable at `C:\setup\mssql\sql_installer.exe` was the SQL Server
 2019 Express download launcher, not the full database installation media:
 
@@ -53,7 +53,41 @@ SRV03 was subsequently reported to have a similar stall. Its installer version
 and exact error have not been supplied. Verify its configured SQL major version
 and edition before applying a replacement; do not assume SRV02's package fits.
 
-## Required deployment changes (pending implementation)
+## Second failure: valid launcher under the wrong profile context
+
+The fresh rebuild later downloaded a different, current Microsoft-signed
+launcher and still stopped before SQL Setup began:
+
+- Version: `15.2607.0.1`.
+- Size: 5,841,264 bytes.
+- SHA-256: `37CC32717ABA3B6633071EC176C6728E05570CFA5CF4C67F54421A0A2B4493C2`.
+- Signature: valid; signer `Microsoft Corporation`.
+- Source receipt: `https://go.microsoft.com/fwlink/?linkid=866658`.
+- SSEI log: `SSEI-Expr_20260917233505.txt`.
+
+SSEI initialized successfully, downloaded its bootstrap manifest, recognized
+Windows Server 2019 as supported, and then threw `NullReferenceException` in
+`Microsoft.Sql.Installer.Engine.Utils.GetDownloadFolder()` from
+`DetectPreviousDownloadActivity`. This happened approximately two seconds after
+startup, before media download or the SQL Database Engine setup phase. This is
+not the earlier obsolete-launcher rejection and is not evidence of damaged SQL
+system databases.
+
+The fork had changed the installer task from GOAD's original
+`logon_type=new_credentials logon_flags=netcredentials_only` execution to
+`logon_type=interactive logon_flags=with_profile`. That caused the launcher to
+load a separate domain-administrator profile even though the normal Vagrant
+profile had already run the launcher successfully. The deployment fix restores
+the original local-profile semantics and the original `C:\setup` working
+directory while retaining the bounded single attempt and recovery guard. This
+specific change still requires live validation on SRV02 and SRV03.
+
+Do not delete SQL files or uninstall an instance for this SSEI exception. First
+confirm that `MSSQL$SQLEXPRESS` is absent and no SQL Setup Bootstrap run was
+created for the failed timestamp; then synchronize the patched source and rerun
+`servers.yml`.
+
+## Required deployment changes
 
 - Use an official Microsoft source appropriate to each configured SQL major
   version and edition; record the resolved artifact URL and version.

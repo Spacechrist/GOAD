@@ -84,6 +84,8 @@
 
     - name: Install the database once with a time limit
       win_command: 'C:\setup\mssql\sql_installer.exe /configurationfile=C:\setup\mssql\sql_conf.ini /IACCEPTSQLSERVERLICENSETERMS /MEDIAPATH=C:\setup\mssql\media /QUIET /HIDEPROGRESSBAR'
+      args:
+        chdir: 'C:\setup'
       async: '{{ sql_install_timeout }}'
       poll: 15
       become: true
@@ -91,7 +93,11 @@
       become_user: '{{ domain_admin }}'
       vars:
         ansible_become_password: '{{ domain_admin_password }}'
-        ansible_become_flags: logon_type=interactive logon_flags=with_profile
+        # Preserve the WinRM connection user's local profile (including its
+        # Downloads known folder) while using the domain credentials only for
+        # outbound authentication.  SSEI can crash in GetDownloadFolder when
+        # started with a newly loaded interactive domain profile.
+        ansible_become_flags: logon_type=new_credentials logon_flags=netcredentials_only
       register: mssqlinstall
       failed_when: mssqlinstall.rc | default(-1) not in [0, 3010]
       no_log: true

@@ -18,7 +18,7 @@ connection_type_2022: "-S 127.0.0.1,1433"
 # still reject obsolete cached bytes at the installation path.
 sql_launcher_minimum_2019: '15.2607.0.1'
 sql_launcher_minimum_2022: '16.0'
-sql_launcher_sha256_2019: ''
+sql_launcher_sha256_2019: '37cc32717aba3b6633071ec176c6728e05570cfa5cf4c67f54421a0a2b4493c2'
 sql_launcher_sha256_2022: ''
 sql_refresh_installer: false
 sql_install_timeout: 5400

@@ -11,6 +11,7 @@ demonstrated. Keep that distinction when recording results.
 | Windows provider discovery crashed in `is_in_path` | Existing signature fix retained | Already passed the user's dependency check |
 | WinRM stalled while changing Ethernet1 | Schedule the validated address change at startup, reload through `vagrant-reload`, then verify address, prefix and DHCP state | First boot on VMware Workstation Windows |
 | SQL launcher stalled and cached downloads were reused | Validate Microsoft signature, product identity, minimum version and optional SHA256; replace obsolete cache only after validating a staged download | Fresh SQL installation on both member servers |
+| Current SQL launcher crashed in `GetDownloadFolder` | Preserve the WinRM connection user's local profile with `new_credentials` / `netcredentials_only` and run from `C:\setup`; avoid loading a fresh interactive domain profile | Fresh SQL installation on both member servers |
 | Partial SQL instance was mistaken for success | Check sustained SQL queries with all four system databases online; refuse orphaned database files; fail with recovery instructions | Fresh installation and second run |
 | Setup was repeated over partial SQL databases | One bounded installer attempt; no automatic whole-playbook retry in VM provisioner | Confirm a deliberate failure stops once |
 | SSMS latest download changed installer generation | Fixed SSMS 20.2.1 full-package URL and matching arguments for fresh installs; complete modern installations recognized with `vswhere` | Fresh install and second-run skip |
@@ -43,10 +44,12 @@ modern installations fail for explicit recovery. This does not pin SQL Engine
 media downloaded internally by the SQL web launcher.
 
 Each verified installer gets a neighboring `.artifact.json` receipt containing
-its URL, detected version and SHA256. Approved hashes can be pinned with
-`sql_launcher_sha256_2019`, `sql_launcher_sha256_2022`, and `ssms_sha256`.
-Defaults intentionally contain no invented hashes. Without operator-approved
-pins, different fresh deployments may obtain different signed SQL launchers.
+its URL, detected version and SHA256. The observed Microsoft-signed SQL 2019
+launcher `15.2607.0.1` is pinned to
+`37cc32717aba3b6633071ec176c6728e05570cfa5cf4c67f54421a0a2b4493c2`.
+SQL 2022 and SSMS can be pinned with `sql_launcher_sha256_2022` and
+`ssms_sha256` after their exact artifacts are approved. An upstream replacement
+will now fail verification rather than silently changing a fresh deployment.
 `sql_refresh_installer` and `ssms_refresh_installer` request a refresh; previous
 binaries are retained under hash-qualified names. A recorded cache whose hash
 unexpectedly changes is rejected.

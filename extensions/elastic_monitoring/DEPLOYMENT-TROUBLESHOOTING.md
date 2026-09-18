@@ -1,73 +1,5 @@
 # Deployment incident and recovery record
 
-## Provisioning VM readiness and retired SQL 2019 download object
-
-On the new instance, the first source synchronization attempt reached the
-provisioning VM before TCP/22 was ready and OpenSSH exited 255 with
-`connect to host 192.168.56.3 port 22: Connection timed out`. Rerunning the
-installation later progressed into `servers.yml`, confirming that this was a
-readiness race rather than a source-manifest rejection.
-
-Source synchronization now retries only transport unavailability (SSH exit 255
-or a transport timeout), for a bounded interval. It does not retry checksum,
-archive, symlink, manifest, or other remote validation failures. Error reporting
-is bounded so the embedded remote program is no longer repeated in the console.
-
-The subsequent `servers.yml` run stopped on SRV02 before SQL Setup executed:
-Microsoft returned HTTP 404 for the former direct object
-`7f8a9c43-8c8a-4f7c-9f92-83c18d96b681/SQL2019-SSEI-Expr.exe`. The role's
-verified download failed closed and its rescue stopped the playbook. This is not
-the earlier partial-database incident: the reported failure was
-`Invoke-WebRequest`, before the installer command.
-
-Microsoft's SQL Server 2019 Express download page still identifies
-`SQL2019-SSEI-Expr.exe`, version 15.0.2000.5, for Windows Server 2016/2019, but
-its old direct link returned 404 during this run. The role now uses Microsoft's
-stable redirect `https://go.microsoft.com/fwlink/?linkid=866658`, observed on
-2026-09-17 resolving to a new `download.microsoft.com` object. Signature,
-original filename, minimum launcher version, artifact receipt, and optional
-SHA256-pin checks remain mandatory. A redirect resolving successfully is not
-enough by itself; the downloaded file must pass those checks.
-
-Recovery: pull the correction, then rerun only `servers.yml` for the existing
-instance. Source synchronization will copy the corrected defaults before Ansible
-starts. Do not delete SQL data, recreate VMs, or start Docker-ELK for this error.
-
-## Confirmed recovery milestone: c99bdc-goad-vmware
-
-On 2026-09-17, after applying the fixes below and rerunning the Windows machines
-sequentially, the user reported: "all five succeeded, i now have the provisioning
-VM as well." This confirms user-reported completion of the five Windows Vagrant
-reruns and creation/startup of the provisioning VM. Individual final verification
-lines and the controller's Ansible output were not supplied with this report.
-
-| Issue | Correction or recovery | Evidence/status |
-| --- | --- | --- |
-| IP change interrupted a live WinRM session | Schedule the lab NIC change at startup, reboot, then run the explicit IP check | Included in the successful Windows reruns |
-| Elevated wrapper failed at UserId | Commit `3d31f68`: use ordinary administrative WinRM for both IP scripts; retain an explicit administrator-token check | No repeat reported in the successful reruns |
-| All five Windows VMs timed out reconnecting after reboot | Commit `37180e4`: disable vmrun IP lookup so management uses the NAT lease lookup instead of the changing secondary NIC address | All five reruns reported successful |
-| Provisioning VM could not bind host port 2210 | Commit `37180e4`: enable automatic port correction on explicit forwards, retaining loopback binding | Provisioning VM subsequently reported available; selected host port not supplied |
-| Updated template did not change the generated workspace | Run `update_instance_files` for `c99bdc-goad-vmware` after pulling | User supplied successful regeneration output |
-| DC01 refused an action because another process held its lock | User terminated the leftover Ruby process, then retried with a single sequential Vagrant process | Subsequent reruns reported successful; terminated PID not supplied |
-
-The recovery sequence was: update the fork, regenerate this instance's files,
-resolve the leftover process lock, rerun Windows Vagrant provisioning one machine
-at a time, and then start PROVISIONING. The final recovery reused the existing
-workspace and Windows VMs. A separate earlier rebuild had intentionally removed
-the previous lab without a backup at the user's request.
-
-Do not generalize the lock recovery into killing all Ruby/Python processes or
-deleting lock files: identify the process owning the earlier operation first.
-"Machine already provisioned" alone was not accepted as proof that the final
-post-reboot verification had completed.
-
-**Still unverified for this new instance:** provisioning-source synchronization,
-controller dependency installation, completed domain/SQL/SSMS Ansible provisioning,
-a clean unattended rebuild without recovery, and repeat-run idempotency. Fleet,
-Elastic Agent/EDR and ingestion have separate outstanding implementation and
-validation work. The earlier successful resumed lab was `fbfe51-goad-vmware`;
-its completion must not be attributed to this new instance.
-
 ## Reboot address selection and provisioning VM port collision
 
 During the fresh `c99bdc-goad-vmware` rebuild, the user reported the same
@@ -82,8 +14,7 @@ The VMware template now sets `enable_vmrun_ip_lookup = false`, selecting the
 provider's alternative address lookup. See
 [provider configuration](https://developer.hashicorp.com/vagrant/docs/providers/vmware/configuration).
 This retains the primary NAT adapter for Vagrant management while the lab NIC
-changes address. The subsequent five successful reruns were reported by the user;
-see the recovery milestone above for the evidence limits.
+changes address. Runtime confirmation on these boxes is still required.
 
 The provisioning VM also failed because host TCP 2210 was occupied. The explicit
 forwarded-port declarations lacked `auto_correct: true`; they now allow Vagrant
@@ -116,16 +47,16 @@ it is unavailable. No UAC or authentication settings are weakened. The startup
 task, reboot and post-reboot verification remain. Existing generated workspace
 Vagrantfiles need updating as well as the source template.
 
-Status: the subsequent five Windows reruns were reported successful after this
-correction and the reconnect fix; independent per-host logs were not supplied. The previous PowerShell syntax pass did not exercise
+Status: correction prepared from the failure evidence; successful Windows runtime
+verification is pending. The previous PowerShell syntax pass did not exercise
 Vagrant's generated elevation wrapper and could not detect this regression.
 
 Last updated: 2026-09-17. This records the evidence available in the deployment
 conversation, not a claim of completed end-to-end validation.
 
 Deployment changes addressing these incidents are now described in
-[REBUILD-FIXES.md](REBUILD-FIXES.md). The new instance's VM-stage recovery is recorded above; full fresh deployment
-and unattended reproducibility remain to be validated.
+[REBUILD-FIXES.md](REBUILD-FIXES.md). They require a fresh Windows/VMware run;
+the recovered lab's success does not validate the new automated path.
 
 ## Environment
 
@@ -257,7 +188,8 @@ Resume at `provision_lab_from servers.yml`, not a new lab creation.
 Later recaps show SRV02 passed servers.yml while SRV03 failed. This supports
 progress on SRV02, not full-lab completion or successful fresh reproduction.
 SRV03's subsequent incomplete-engine failure must be tracked separately.
-Permanent artifact/version/signature/cache handling remains unimplemented.
+Artifact/version/signature/cache validation is implemented in the rebuild fork.
+The later profile-context failure is recorded separately below.
 
 ## 7. SRV03 partial SQL installation and master.mdf conflict
 
@@ -367,6 +299,33 @@ because it includes legacy.yml. The user next reported completed provisioning.
 Permanent requirement: investigate native Windows source synchronization and
 verify remote source hashes/revision before executing Ansible. Direct scp is a
 workaround, not proof that sync_source_jumpbox is fixed.
+
+## 10. Current SQL 2019 launcher crashed resolving its download folder
+
+On the fresh `c99bdc-goad-vmware` rebuild, SRV02 acquired the current launcher
+from Microsoft's stable fwlink. The captured artifact was version `15.2607.0.1`,
+5,841,264 bytes, signed by Microsoft, with SHA-256
+`37CC32717ABA3B6633071EC176C6728E05570CFA5CF4C67F54421A0A2B4493C2`.
+
+Its SSEI log showed successful initialization and supported-OS detection, then
+`DetectPreviousRulesDownloadActivity` failed with `NullReferenceException` in
+`Microsoft.Sql.Installer.Engine.Utils.GetDownloadFolder()`. No media-download or
+SQL Setup phase followed. This differs from the obsolete-launcher failure and
+does not justify database removal.
+
+Cause in the fork: the hardened role had changed the original GOAD runas flags
+to `logon_type=interactive logon_flags=with_profile`, loading a different
+domain-administrator profile. The successful visible run had used the normal
+Vagrant profile. Fix: restore
+`logon_type=new_credentials logon_flags=netcredentials_only` and the original
+`C:\setup` working directory, while keeping one bounded attempt, log preservation,
+and post-install health checks. The observed SQL 2019 launcher hash is now pinned.
+
+Live validation remains required. Before retrying, confirm the failed timestamp
+did not create an SQLEXPRESS service or SQL Setup Bootstrap run. Synchronize the
+fork sources to the provisioning VM, then resume from `servers.yml`; do not start
+Docker-ELK or any monitoring/EDR deployment until core GOAD reaches a clean
+recap.
 
 ## Successful resumed provisioning milestone
 
