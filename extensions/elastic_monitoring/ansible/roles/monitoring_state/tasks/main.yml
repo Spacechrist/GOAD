@@ -1,0 +1,53 @@
+---
+- name: Create a private telemetry state directory for SYSTEM and Administrators
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $path = Join-Path $env:ProgramData 'GOAD-Monitoring'
+      if (Test-Path -LiteralPath $path) {
+          $item = Get-Item -LiteralPath $path -Force
+          if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'State directory must be an ordinary directory, not a reparse point.'
+          }
+          $owner = (Get-Acl -LiteralPath $path).GetOwner([Security.Principal.SecurityIdentifier]).Value
+          if ($owner -notin @('S-1-5-18', 'S-1-5-32-544')) {
+              throw 'Existing state directory has an unexpected owner; inspect before adoption.'
+          }
+          $descendants = @(Get-ChildItem -LiteralPath $path -Force -Recurse)
+          foreach ($child in $descendants) {
+              if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                  throw 'Reparse point found inside the state directory.'
+              }
+              $childAcl = Get-Acl -LiteralPath $child.FullName
+              $rules = $childAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+              foreach ($rule in $rules) {
+                  $writeRights = [Security.AccessControl.FileSystemRights]'Write,Delete,ChangePermissions,TakeOwnership'
+                  if ($rule.AccessControlType -eq 'Allow' -and
+                      $rule.IdentityReference.Value -notin @('S-1-5-18', 'S-1-5-32-544') -and
+                      ($rule.FileSystemRights -band $writeRights)) {
+                      throw 'An existing state artifact is writable by an unexpected principal.'
+                  }
+              }
+          }
+      } else {
+          New-Item -ItemType Directory -Path $path | Out-Null
+          $Ansible.Changed = $true
+      }
+      $acl = New-Object Security.AccessControl.DirectorySecurity
+      $acl.SetAccessRuleProtection($true, $false)
+      foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+          $identity = New-Object Security.Principal.SecurityIdentifier($sid)
+          $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+              $identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+          $acl.AddAccessRule($rule)
+      }
+      $acl.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')))
+      $current = Get-Acl -LiteralPath $path
+      $sections = [Security.AccessControl.AccessControlSections]'Access,Owner'
+      if ($current.GetSecurityDescriptorSddlForm($sections) -ne $acl.GetSecurityDescriptorSddlForm($sections)) {
+          Set-Acl -LiteralPath $path -AclObject $acl
+          $Ansible.Changed = $true
+      }
+      $Ansible.Result = @{ path = $path }
+  register: monitoring_state

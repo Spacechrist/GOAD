@@ -1,0 +1,32 @@
+- name: Discover installed SSMS products and actual executables
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $installed = $false
+      $reboot = $false
+      $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+      if (Test-Path -LiteralPath $vswhere) {
+          $json = & $vswhere -products Microsoft.VisualStudio.Product.SSMS -all -format json
+          if ($LASTEXITCODE -ne 0) { throw 'SSMS discovery failed' }
+          foreach ($instance in @((($json -join "`n") | ConvertFrom-Json))) {
+              if ($null -eq $instance) { continue }
+              if (-not $instance.isComplete -or -not $instance.isLaunchable -or
+                  -not $instance.productPath -or -not (Test-Path -LiteralPath $instance.productPath -PathType Leaf)) {
+                  throw 'Partial SSMS installation detected; recover it before provisioning'
+              }
+              $installed = $true
+              if ($instance.isRebootRequired) { $reboot = $true }
+          }
+      }
+      $exe = Join-Path ${env:ProgramFiles(x86)} 'Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe'
+      $keys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
+      $registration = Get-ItemProperty $keys -ErrorAction SilentlyContinue |
+          Where-Object { $_.DisplayName -match '^Microsoft SQL Server Management Studio.*20' }
+      if ($registration -and -not (Test-Path -LiteralPath $exe)) {
+          throw 'Registered SSMS 20 executable is missing; recover installation first'
+      }
+      if ($registration -and (Test-Path -LiteralPath $exe)) { $installed = $true }
+      $Ansible.Result = @{ installed = $installed; reboot_required = $reboot }
+  register: ssms_discovery

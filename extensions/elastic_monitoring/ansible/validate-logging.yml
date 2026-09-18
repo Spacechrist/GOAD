@@ -1,0 +1,12 @@
+---
+- name: Refresh read-only observations
+  ansible.builtin.import_playbook: preflight.yml
+
+- name: Verify logging after an operator-controlled Group Policy refresh
+  hosts: monitoring_selected
+  gather_facts: false
+  tasks:
+    - name: Validate without applying settings
+      ansible.builtin.include_role:
+        name: windows_logging
+        tasks_from: validate

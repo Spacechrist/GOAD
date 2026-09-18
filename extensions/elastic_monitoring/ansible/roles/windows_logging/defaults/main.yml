@@ -1,0 +1,67 @@
+---
+monitoring_registry_settings:
+  - path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
+    name: SCENoApplyLegacyAuditPolicy
+    type: dword
+    data: 1
+  - path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit
+    name: ProcessCreationIncludeCmdLine_Enabled
+    type: dword
+    data: 1
+  - path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
+    name: EnableScriptBlockLogging
+    type: dword
+    data: 1
+  - path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging
+    name: EnableModuleLogging
+    type: dword
+    data: 1
+  - path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames
+    name: '*'
+    type: string
+    data: '*'
+
+# English-only preset, checked before mutation. Existing unrelated subcategories
+# are not touched. Targeted object auditing/SACLs are a separate milestone.
+monitoring_audit_settings:
+  - subcategory: Process Creation
+    audit_type: [success, failure]
+  - subcategory: Logon
+    audit_type: [success, failure]
+  - subcategory: Logoff
+    audit_type: [success, failure]
+  - subcategory: Special Logon
+    audit_type: [success, failure]
+  - subcategory: Account Lockout
+    audit_type: [success, failure]
+  - subcategory: User Account Management
+    audit_type: [success, failure]
+  - subcategory: Security Group Management
+    audit_type: [success, failure]
+  - subcategory: Audit Policy Change
+    audit_type: [success, failure]
+  - subcategory: Credential Validation
+    audit_type: [success, failure]
+monitoring_dc_audit_settings:
+  - subcategory: Kerberos Authentication Service
+    audit_type: [success, failure]
+  - subcategory: Kerberos Service Ticket Operations
+    audit_type: [success, failure]
+
+monitoring_log_channels:
+  - name: Security
+    max_bytes: "{{ monitoring_security_log_bytes }}"
+  - name: System
+    max_bytes: "{{ monitoring_event_log_bytes }}"
+  - name: Application
+    max_bytes: "{{ monitoring_event_log_bytes }}"
+  - name: Windows PowerShell
+    max_bytes: "{{ monitoring_event_log_bytes }}"
+  - name: Microsoft-Windows-PowerShell/Operational
+    max_bytes: "{{ monitoring_event_log_bytes }}"
+  - name: Microsoft-Windows-TaskScheduler/Operational
+    max_bytes: "{{ monitoring_event_log_bytes }}"
+  - name: Microsoft-Windows-WMI-Activity/Operational
+    max_bytes: "{{ monitoring_event_log_bytes }}"
+  - name: Microsoft-Windows-WinRM/Operational
+    max_bytes: "{{ monitoring_event_log_bytes }}"

@@ -22,6 +22,9 @@ boxes.append(
 
   config.vm.provider "vmware_desktop" do |v|
     v.force_vmware_license = "workstation"  # force the licence for fix some vagrant plugin issue
+    # vmrun can return the secondary NIC's old DHCP address during reboot.
+    # Use the provider's NAT lease lookup instead of that transient address.
+    v.enable_vmrun_ip_lookup = false
     # v.gui = true
   end
 
@@ -67,7 +70,12 @@ boxes.append(
 
         # fix ip for vmware
         if ENV['VAGRANT_DEFAULT_PROVIDER'] == "vmware_desktop"
+          # Apply the secondary address at boot, outside the live WinRM session.
+          # Use the existing administrative WinRM session. The elevated wrapper
+          # fails registering its vagrant UserId task on these Windows boxes.
           target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: false, args: box[:ip]
+          target.vm.provision :reload
+          target.vm.provision :shell, :path => "../../../vagrant/verify_ip.ps1", privileged: false, args: box[:ip]
         end
       else
         target.vm.communicator = "ssh"
@@ -75,8 +83,8 @@ boxes.append(
 
       if box.has_key?(:forwarded_port)
         # forwarded port explicit
-        box[:forwarded_port] do |forwarded_port|
-          target.vm.network :forwarded_port, guest: forwarded_port[:guest], host: forwarded_port[:host], host_ip: "127.0.0.1", id: forwarded_port[:id]
+        box[:forwarded_port].each do |forwarded_port|
+          target.vm.network :forwarded_port, guest: forwarded_port[:guest], host: forwarded_port[:host], host_ip: "127.0.0.1", id: forwarded_port[:id], auto_correct: true
         end
       end
 

@@ -1,0 +1,43 @@
+---
+- name: Select host-role audit settings and installed Sysmon channel
+  ansible.builtin.set_fact:
+    monitoring_effective_audit: >-
+      {{ monitoring_audit_settings +
+         (monitoring_dc_audit_settings if monitoring_probe.result.is_dc else []) }}
+    monitoring_effective_channels: >-
+      {{ monitoring_log_channels +
+         ([{'name': 'Microsoft-Windows-Sysmon/Operational', 'max_bytes': monitoring_event_log_bytes}]
+          if monitoring_sysmon_enabled else []) }}
+
+- name: Save initial audit, registry, and channel settings before first change
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', role_path + '/files/Backup-Logging.ps1') }}"
+    parameters:
+      StateRoot: "{{ monitoring_state.result.path }}"
+      RegistryJson: "{{ monitoring_registry_settings | to_json }}"
+      ChannelsJson: "{{ monitoring_effective_channels | to_json }}"
+    error_action: stop
+
+- name: Enable command-line and PowerShell logging without touching unrelated values
+  ansible.windows.win_regedit:
+    path: "{{ item.path }}"
+    name: "{{ item.name }}"
+    type: "{{ item.type }}"
+    data: "{{ item.data }}"
+  loop: "{{ monitoring_registry_settings }}"
+
+- name: Enable the reviewed host-role audit subcategories
+  ansible.windows.win_audit_policy_system:
+    subcategory: "{{ item.subcategory }}"
+    audit_type: "{{ item.audit_type }}"
+  loop: "{{ monitoring_effective_audit }}"
+
+- name: Enable channels and increase capacity while preserving retention mode
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', role_path + '/files/Set-Channels.ps1') }}"
+    parameters:
+      ChannelsJson: "{{ monitoring_effective_channels | to_json }}"
+    error_action: stop
+
+- name: Verify effective logging settings
+  ansible.builtin.include_tasks: verify.yml

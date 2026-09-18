@@ -1,25 +1,57 @@
-- name: check SQL Server Manager Studio installer exists
-  win_stat:
-    path: c:\setup\mssql\SSMS_installer.exe
-  register: ssms_installer_file
+- name: Require a real run for installer state transitions
+  assert:
+    that: not ansible_check_mode
+    fail_msg: 'Installer discovery and recovery require a normal run; check mode cannot validate installation health.'
 
-- name: get the installer
-  win_get_url:
-      url: 'https://aka.ms/ssmsfullsetup'
-      dest: 'c:\setup\mssql\SSMS_installer.exe'
-  when: not ssms_installer_file.stat.exists
+- name: Inspect SSMS before any download
+  include_tasks: discover.yml
 
-- name: check SSMS installation already done
-  win_stat:
-    path: "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 18"
-  register: ssms_installation
-
-- name: Install SSMS
-  win_command: c:\setup\mssql\SSMS_installer.exe /install /quiet /norestart
-  register: install_ssmss
-  when: not ssms_installation.stat.exists
-
-- name: Reboot after install
+- name: Finish pending reboot for existing modern SSMS
   win_reboot:
     reboot_timeout: 600
-  when: not ssms_installation.stat.exists
+  when: ssms_discovery.result.reboot_required | bool
+
+- name: Install missing SSMS using the fixed full package
+  when: not (ssms_discovery.result.installed | bool)
+  block:
+    - name: Check supported OS for SSMS 20
+      win_shell: |
+        if ([Environment]::OSVersion.Version.Build -lt 14393) {
+            throw 'SSMS package requires Windows Server 2016 / Windows 10 1607 or newer'
+        }
+      changed_when: false
+
+    - name: Acquire a verified SSMS 20 installer
+      include_role:
+        name: verified_installer
+      vars:
+        installer_url: '{{ ssms_download_url }}'
+        installer_destination: 'C:\setup\mssql\SSMS_installer.exe'
+        installer_version_pattern: '{{ ssms_version_pattern }}'
+        installer_minimum_version: '20.2'
+        installer_sha256: '{{ ssms_sha256 }}'
+        installer_refresh: '{{ ssms_refresh_installer }}'
+
+    - name: Install SSMS with matching package arguments and a time limit
+      win_command: 'C:\setup\mssql\SSMS_installer.exe /install /quiet /norestart /log C:\setup\mssql\ssms-install.log'
+      async: '{{ ssms_install_timeout }}'
+      poll: 15
+      register: ssms_install
+      failed_when: ssms_install.rc | default(-1) not in [0, 3010]
+
+    - name: Reboot only if SSMS requested it
+      win_reboot:
+        reboot_timeout: 1200
+      when: ssms_install.rc == 3010
+
+    - name: Verify installed SSMS product
+      include_tasks: discover.yml
+
+    - name: Require a complete installed product
+      assert:
+        that: ssms_discovery.result.installed | bool
+        fail_msg: 'SSMS returned success but product discovery failed; inspect C:\setup\mssql\ssms-install.log'
+  rescue:
+    - name: Report SSMS failure without an automatic retry
+      fail:
+        msg: 'SSMS failed. Inspect C:\setup\mssql\ssms-install.log and TEMP\dd_* logs. Recover any partial installation before retrying.'

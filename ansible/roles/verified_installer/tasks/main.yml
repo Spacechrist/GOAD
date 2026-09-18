@@ -1,0 +1,12 @@
+- name: Verify or replace the cached Microsoft installer
+  ansible.windows.win_powershell:
+    script: "{{ lookup('file', role_path + '/files/Get-VerifiedInstaller.ps1') }}"
+    parameters:
+      Url: '{{ installer_url }}'
+      Destination: '{{ installer_destination }}'
+      ExpectedSHA256: '{{ installer_sha256 }}'
+      MinimumVersion: '{{ installer_minimum_version }}'
+      VersionPattern: '{{ installer_version_pattern }}'
+      OriginalName: '{{ installer_original_name }}'
+      Refresh: '{{ installer_refresh | bool }}'
+  register: verified_installer
