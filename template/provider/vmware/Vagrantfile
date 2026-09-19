@@ -36,7 +36,7 @@ boxes.append(
     config.vbguest.auto_update = false
   end
 
-  config.vm.boot_timeout = 600
+  config.vm.boot_timeout = 900
   config.vm.graceful_halt_timeout = 600
   config.winrm.retry_limit = 30
   config.winrm.retry_delay = 10
